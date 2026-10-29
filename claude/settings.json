@@ -1,0 +1,18 @@
+{
+  "env": {
+    "GIT_ASKPASS": "/bin/coder",
+    "GIT_SSH_COMMAND": "/bin/coder gitssh --",
+    "GITHUB_TOKEN": ""
+  },
+  "hooks": {
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "Notification": [{ "matcher": "permission_prompt|idle_prompt|elicitation_dialog", "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "AGENT_STATUS_HOOK" }] }]
+  }
+}

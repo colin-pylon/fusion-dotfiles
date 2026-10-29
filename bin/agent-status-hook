@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Claude Code hook: mark ~/.agent-status.md as needs-colin while a session is
+# waiting on a person, and restore the previous state once that session moves
+# again. Reads the hook payload on stdin. Never fails the hook.
+
+set -uo pipefail
+
+status_file="${AGENT_STATUS_FILE:-$HOME/.agent-status.md}"
+mark_file="${XDG_STATE_HOME:-$HOME/.local/state}/agent-status-hook/mark"
+mkdir -p "$(dirname "$mark_file")" || exit 0
+
+payload="$(cat)"
+field() { jq -r "$1 // empty" <<<"$payload" 2>/dev/null; }
+
+event="$(field .hook_event_name)"
+owner="$(field .session_id)/$(field .agent_id)"
+now="$(date -Iseconds)"
+
+line() { grep -m1 "^$1:" "$status_file" 2>/dev/null; }
+
+# Replaces the `key:` line (or appends it) in the status file.
+set_line() {
+  local key="$1" new="$2" tmp
+  tmp="$(mktemp "$status_file.XXXXXX")" || return
+  if grep -q "^$key:" "$status_file"; then
+    awk -v k="$key:" -v n="$new" 'index($0, k) == 1 && !done { print n; done = 1; next } { print }' \
+      "$status_file" >"$tmp"
+  else
+    cat "$status_file" >"$tmp"
+    printf '%s\n' "$new" >>"$tmp"
+  fi
+  mv "$tmp" "$status_file"
+}
+
+mark() {
+  local reason="blocked-on: $1"
+  if [[ ! -f $status_file ]]; then
+    printf '%s\n' "updated: $now" "task: unknown" "ticket: none" "state: working" \
+      "summary: (written by agent-status-hook)" "next: unknown" "blocked-on: nothing" \
+      "prs: none" >"$status_file"
+  fi
+  # The first mark remembers what to restore; later marks only refresh it.
+  local prev_state prev_blocked
+  if [[ -f $mark_file ]]; then
+    { read -r _; read -r prev_state; read -r prev_blocked; } <"$mark_file"
+  else
+    prev_state="$(line state)" prev_blocked="$(line blocked-on)"
+  fi
+  printf '%s\n' "$owner" "$prev_state" "$prev_blocked" "$reason" >"$mark_file"
+  set_line state "state: needs-colin"
+  set_line blocked-on "$reason"
+  set_line updated "updated: $now"
+}
+
+clear_mark() {
+  [[ -f $mark_file ]] || return 0
+  local marked_owner prev_state prev_blocked reason
+  { read -r marked_owner; read -r prev_state; read -r prev_blocked; read -r reason; } <"$mark_file"
+  # A prompt resumes the whole session, subagents included; an ended session
+  # waits on nobody.
+  if [[ $marked_owner != "$owner" ]]; then
+    [[ $event == UserPromptSubmit || $event == SessionEnd ]] && [[ ${marked_owner%/*} == "${owner%/*}" ]] || return 0
+  fi
+  rm -f "$mark_file"
+  # Leave the file alone if the agent rewrote it while it was marked.
+  [[ "$(line blocked-on)" == "$reason" ]] || return 0
+  set_line state "${prev_state:-state: working}"
+  set_line blocked-on "${prev_blocked:-blocked-on: nothing}"
+  set_line updated "updated: $now"
+}
+
+exec 9>"$mark_file.lock"
+flock -w 5 9 || exit 0
+
+case "$event" in
+  PermissionRequest)
+    # AskUserQuestion asks too in manual mode; PreToolUse has already marked it.
+    [[ "$(field .tool_name)" == AskUserQuestion ]] || mark "waiting at a permission prompt ($(field .tool_name))" ;;
+  Notification)
+    case "$(field .notification_type)" in
+      # Backstop for PermissionRequest, which has already marked it with the tool.
+      permission_prompt) [[ -f $mark_file ]] || mark "waiting at a permission prompt" ;;
+      elicitation_dialog) mark "waiting on an MCP input dialog" ;;
+      # Idle is normal after a finished turn; it is a stall only if the agent
+      # stopped while still claiming to work.
+      idle_prompt) [[ "$(line state)" == "state: working" ]] && mark "idle at the prompt while state was working" ;;
+    esac ;;
+  PreToolUse)
+    if [[ "$(field .tool_name)" == AskUserQuestion ]]; then
+      mark "waiting on a question menu"
+    else
+      clear_mark
+    fi ;;
+  *) clear_mark ;;
+esac
+exit 0

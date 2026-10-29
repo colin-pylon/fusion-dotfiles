@@ -1,4 +1,68 @@
 #!/usr/bin/env bash
-set -x
-git remote add dotfiles https://github.com/colin-pylon/dotfiles
-git fetch dotfiles && git switch main && exec ./install
+# Installs these dotfiles. The fusion Coder template runs it on every workspace
+# start, after it writes ~/.claude/settings.json, so every step is idempotent.
+
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+warn() { echo >&2 "fusion-dotfiles: $*"; }
+
+# Colin's agent instructions, from the agents/ directory of his public dotfiles.
+# When GitHub is unreachable, the copy from the last successful fetch stays.
+install_agent_instructions() {
+  local url=https://github.com/kalgynirae/dotfiles branch=pylon
+  local src="$HOME/.cache/agent-instructions" dest="$HOME/.config/agents"
+  if [[ ! -d $src/.git ]]; then
+    git init -q "$src"
+  fi
+  if GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$src" fetch -q --depth 1 "$url" "$branch"; then
+    git -C "$src" reset -q --hard FETCH_HEAD
+  else
+    warn "could not fetch $url@$branch; keeping the agent instructions already installed"
+  fi
+  if [[ ! -f $src/agents/AGENTS.md ]]; then
+    warn "no agents/AGENTS.md from $url@$branch; agent instructions not installed"
+    return
+  fi
+  mkdir -p "$dest" "$HOME/.claude"
+  cp "$src"/agents/*.md "$dest"/
+  cp "$src/agents/AGENTS.md" "$HOME/.claude/CLAUDE.md"
+  if [[ -d $src/agents/skills ]]; then
+    rm -rf "$dest/skills"
+    cp -r "$src/agents/skills" "$dest/skills"
+  fi
+}
+
+# Merges claude/settings.json into the user settings: env keys are set, and
+# each hook event gets this repo's hook in place of any earlier copy of it.
+install_claude_settings() {
+  local settings="$HOME/.claude/settings.json" hook="$repo/bin/agent-status-hook" merged
+  mkdir -p "$HOME/.claude"
+  [[ -s $settings ]] || echo '{}' >"$settings"
+  merged="$(jq --arg hook "$hook" --slurpfile ours "$repo/claude/settings.json" '
+    ($ours[0] | (.. | objects | select(.command == "AGENT_STATUS_HOOK") | .command) |= $hook) as $o
+    | .env = ((.env // {}) + $o.env)
+    | .hooks = (reduce ($o.hooks | to_entries[]) as $e (.hooks // {};
+        .[$e.key] = ([(.[$e.key] // [])[] | select(all(.hooks[]?; .command != $hook))] + $e.value)))
+  ' "$settings")"
+  printf '%s\n' "$merged" >"$settings"
+}
+
+install_shell() {
+  local line="[ -f $repo/shell/rc.bash ] && . $repo/shell/rc.bash"
+  touch "$HOME/.bashrc"
+  grep -qxF "$line" "$HOME/.bashrc" || printf '%s\n' "$line" >>"$HOME/.bashrc"
+}
+
+install_tmux() {
+  local conf="$HOME/.tmux.conf"
+  if [[ -e $conf && ! -L $conf ]]; then
+    mv "$conf" "$conf.orig"
+  fi
+  ln -sfn "$repo/tmux.conf" "$conf"
+}
+
+install_agent_instructions
+install_claude_settings
+install_shell
+install_tmux
