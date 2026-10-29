@@ -81,9 +81,6 @@ case "$event" in
       # Backstop for PermissionRequest, which has already marked it with the tool.
       permission_prompt) [[ -f $mark_file ]] || mark "waiting at a permission prompt" ;;
       elicitation_dialog) mark "waiting on an MCP input dialog" ;;
-      # Idle is normal after a finished turn; it is a stall only if the agent
-      # stopped while still claiming to work.
-      idle_prompt) [[ "$(line state)" == "state: working" ]] && mark "idle at the prompt while state was working" ;;
     esac ;;
   PreToolUse)
     if [[ "$(field .tool_name)" == AskUserQuestion ]]; then

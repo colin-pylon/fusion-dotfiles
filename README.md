@@ -30,7 +30,6 @@ a `blocked-on:` reason and a fresh `updated:` when:
 | `PermissionRequest` | `waiting at a permission prompt (<tool>)` |
 | `PreToolUse` on `AskUserQuestion` | `waiting on a question menu` |
 | `Notification` `elicitation_dialog` | `waiting on an MCP input dialog` |
-| `Notification` `idle_prompt`, only while `state: working` | `idle at the prompt while state was working` |
 | `Notification` `permission_prompt`, if not already marked | `waiting at a permission prompt` |
 
 The next event from the same session and subagent restores the previous
@@ -40,7 +39,7 @@ The next event from the same session and subagent restores the previous
 file while it was marked, the hook leaves it alone. The saved state is in
 `~/.local/state/agent-status-hook/mark`.
 
-`Notification` `agent_needs_input` is left out on purpose. It is sent by the
+`Notification` `idle_prompt` is left out on purpose: an agent waiting on a background job is idle too, and `needs-colin` pages Colin. `agent_needs_input` is left out as well. It is sent by the
 `claude agents` view, not by the waiting session. The waiting session has
 already marked the file through its own hooks, and a mark owned by the view
 session would never be cleared.
