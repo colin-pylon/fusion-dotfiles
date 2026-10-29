@@ -62,7 +62,27 @@ install_tmux() {
   ln -sfn "$repo/tmux.conf" "$conf"
 }
 
+# Pushes go over SSH through `coder gitssh` with the Coder key, which is a
+# write deploy key on this repo; fetches stay on HTTPS. GitHub's host keys
+# come from api.github.com/meta so the first push never asks to trust a key.
+install_ssh_push() {
+  local known="$HOME/.ssh/known_hosts" keys tmp origin
+  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+  if keys="$(curl -fsS --max-time 10 https://api.github.com/meta | jq -er '.ssh_keys[] | "github.com " + .')"; then
+    tmp="$(mktemp "$known.XXXXXX")"
+    { grep -v '^github\.com ' "$known" 2>/dev/null || true; printf '%s\n' "$keys"; } >"$tmp"
+    mv "$tmp" "$known"
+  else
+    warn "could not fetch GitHub's host keys; keeping $known as it is"
+  fi
+  origin="$(git -C "$repo" remote get-url origin 2>/dev/null)" || return 0
+  if [[ $origin =~ ^https://github\.com/([^/]+/[^/]+)$ ]]; then
+    git -C "$repo" remote set-url --push origin "git@github.com:${BASH_REMATCH[1]%.git}.git"
+  fi
+}
+
 install_agent_instructions
+install_ssh_push
 install_claude_settings
 install_shell
 install_tmux
