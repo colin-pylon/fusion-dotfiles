@@ -35,9 +35,9 @@ set_line() {
 mark() {
   local reason="blocked-on: $1"
   if [[ ! -f $status_file ]]; then
-    printf '%s\n' "updated: $now" "task: unknown" "ticket: none" "state: working" \
-      "summary: (written by agent-status-hook)" "next: unknown" "blocked-on: nothing" \
-      "prs: none" >"$status_file"
+    printf '%s\n' "updated: $now" "tasks: unknown" "tickets: none" \
+      "state: working" "summary: (written by agent-status-hook)" "next: unknown" \
+      "blocked-on: nothing" "prs: none" "sessions: none" >"$status_file"
   fi
   # The first mark remembers what to restore; later marks only refresh it.
   local prev_state prev_blocked
